@@ -1,0 +1,25 @@
+# --- Секреты / окружение ---
+app/.env
+.env
+*.env
+
+# --- Office lock-файлы (DEV-NOTES §14.3) ---
+~$*
+
+# --- Экспорт для чтения (DEV-NOTES §17) ---
+_export/
+
+# --- Локальные бэкапы при sync (DEV-NOTES §7) ---
+.backup_local/
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# --- Модели / веса (крупные, не в git) ---
+models/
+*.bin
+*.pt
+*.onnx
