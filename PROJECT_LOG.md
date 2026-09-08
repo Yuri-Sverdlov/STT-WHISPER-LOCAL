@@ -21,3 +21,42 @@ Append-only журнал сессий. Новые записи — снизу.
   русский на base распознаётся без настройки языка.
 - Уточнено железо: RTX 3050 — машина первичного теста; проект продолжается на машине RTX 4060.
 - Активная задача переключена на развёртывание на RTX 4060 + GPU (CUDA 12).
+
+## 2026-09-07 — GitHub и перенос на RTX 4060
+- Репозиторий на GitHub: `Yuri-Sverdlov/STT-WHISPER-LOCAL`, ветка `main`.
+- Клон на целевой машине RTX 4060: `G:\AI\_MY_PROGRAMMING_3\STT-WHISPER-LOCAL`.
+- HEAD `2a08f8d` — docs: drop absolute DEV-NOTES path from redirects.
+## 2026-09-07 — Пересмотр: CUDA Toolkit не нужен
+- Консультант + сверка с docs/gpu-setup.md whisper-local: GPU-библиотеки **не в .exe**,
+  ставятся через pip при onboarding (`nvidia-*-cu12`). CUDA Toolkit (Option B) отменён.
+- Драйвер 581.57 / CUDA 13.0 на RTX 4060 достаточен. TASK rev.2: скачать whisper-local
+  (браузер/winget), принять GPU setup, далее large-v3 + тест.
+- Кодер застрял в browser-цикле на NVIDIA download pages — явный запрет в TASK.
+
+## 2026-09-07 — Трек A заработал на GPU (RTX 4060). Разбор граблей
+Разложено Claude (консультант, через Desktop Commander) по просьбе Юрия — без агентов Cursor.
+
+Отчёт кодера останавливался на «GPU ready, тест ждёт пользователя». Но «модель грузится»
+НЕ значит «распознаёт»: реальная диктовка падала/висла. Причины (все устранены):
+
+1. `recording_hotkey: AltGr+/` — библиотека global_hotkeys не знает ключ `altgr` -> краш
+   при старте. Правый Alt / AltGr использовать НЕЛЬЗЯ.
+2. Символ `/` как клавиша не переживает нормализацию whisper_key (становится пустым ключом)
+   -> краш. Годятся только буквы, `space`, F-клавиши, модификаторы.
+3. Пустой `stop_key: ''` — БАГ whisper-local 0.18.3: добавляется в привязки без проверки
+   на пустоту -> "key []" -> краш при старте. Лечение: задать валидную клавишу (`f8`).
+4. ГЛАВНОЕ — нет cuBLAS. Сборка ctranslate2 несёт cudnn64_9.dll, но НЕ несёт
+   cublas64_12.dll. Модель грузится, но первый расчёт (encode) бросает
+   "Library cublas64_12.dll is not found" — приложение ошибку ПРОГЛАТЫВАЕТ и виснет на
+   "transcribing...". В UI ошибки не видно; вскрыто прямым прогоном faster_whisper через
+   venv-python.
+
+Фиксы:
+- `user_settings.yaml` (пер-машинный): `recording_hotkey: ctrl+space` (hold-to-record),
+  `stop_key: f8`.
+- `pip install nvidia-cublas-cu12` в venv приложения + СКОПИРОВАНЫ cublas64_12.dll и
+  cublasLt64_12.dll из `...\site-packages\nvidia\cublas\bin` в `...\site-packages\ctranslate2`
+  (CT2 ищет DLL только в своей папке, рядом с cudnn64_9.dll). Один pip без копии не помогает.
+
+Проверка: прямой прогон faster_whisper на GPU — model load 3.3s, transcribe 0.7s (float16).
+Юрий подтвердил вживую: Ctrl+Space -> русский текст вставляется в Блокнот. Трек A на GPU ЗАКРЫТ.
