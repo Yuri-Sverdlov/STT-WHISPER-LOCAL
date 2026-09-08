@@ -16,18 +16,23 @@ Sync — через GitHub (DEV-NOTES §7).
 | GPU | RTX 3050, 8 ГБ VRAM | RTX 4060, 8 ГБ VRAM |
 | RAM | 16 ГБ | 32 ГБ |
 | Клон репо | `G:\_MY-PROGRAMMING_3\STT-WHISPER-LOCAL` | `G:\AI\_MY_PROGRAMMING_3\STT-WHISPER-LOCAL` |
-| Трек A | CPU-базлайн проверен (base, int8); GPU — в работе | GPU работает (large-v3, ~0.7 с) |
+| Трек A | свой скрипт `app/dictate.py` работает (GPU large-v3, ~1 с) | GUI GPU работает (large-v3, ~0.7 с) |
 
 - **Git:** `https://github.com/Yuri-Sverdlov/STT-WHISPER-LOCAL`, ветка `main`.
 - Windows 11, Python, PowerShell 7 (`pwsh`). FFmpeg глобально (§8), фикс UTF-8 (§12).
 - Диск: рабочий том `G:` (§15.4). Архив `H:` агенту не подключать.
 
-## Два трека
-- **A (база): whisper-local** (`drajb/whisper-local` 0.18.3) — офлайн, faster-whisper /
-  CTranslate2, конфиг `%APPDATA%\whisperkey\user_settings.yaml`.
-  **ПК2:** GPU large-v3, float16, ru, хоткей `ctrl+space` — проверено 2026-09-07.
-  **ПК1:** CPU base/int8 работал; цель — довести до стабильной GPU- или CPU-конфигурации
-  с тем же UX. Грабли GPU — в AGENTS.md, трек A.
+## Треки
+- **A (офлайн-движок): faster-whisper / CTranslate2.** Две реализации поверх ОДНОГО
+  движка и окружения:
+  - **A1 — свой тонкий скрипт `app/dictate.py` (ОСНОВНОЙ, «трек-подход»).** Собственная
+    минимальная диктовка в обход GUI. Запускается в bundled Python
+    `%LOCALAPPDATA%\Python\pythoncore-3.14-64` (там cuBLAS рядом с ctranslate2).
+    **ПК1:** large-v3/cuda/float16/ru, хоткей-тумблер `ctrl+space` — работает (2026-09-08).
+    Это официальный способ диктовки в проекте.
+  - **A2 — GUI-обёртка whisper-local** (`drajb/whisper-local` 0.18.3), конфиг
+    `%APPDATA%\whisperkey\user_settings.yaml`. Оставлена как справка/резерв: **виснет**
+    (проглатывает ошибку cuBLAS), поэтому не основной путь. Грабли — в AGENTS.md, трек A.
 - **B (качество, потом): своя диктовка на облачной модели Google** — распознавание +
   встроенная зачистка в один проход. BYOK-ключ AI Studio. НЕ начат.
 
@@ -35,8 +40,9 @@ Sync — через GitHub (DEV-NOTES §7).
 Архитектор (чат) / кодер (терминал) / консультант-ревьюер — DEV-NOTES §1, §1.1.
 
 ## Текущий фокус
-Синхронизировать ПК1 с GitHub и развернуть трек A на RTX 3050 (GPU при возможности,
-иначе стабильный CPU). Трек B — после стабильности на обоих ПК.
+ПК1: диктовка работает через свой скрипт `app/dictate.py` (трек A1, GPU large-v3).
+Дальше — паритет на ПК2 (тот же скрипт в его окружении) и мелкий UX (хоткей-тумблер,
+автозапуск). GUI whisper-local (A2) — только резерв. Трек B — после стабильности на обоих ПК.
 
 ## Важно про конфиг
 `%APPDATA%\whisperkey\user_settings.yaml` — **пер-машинный**, в репозиторий НЕ входит.

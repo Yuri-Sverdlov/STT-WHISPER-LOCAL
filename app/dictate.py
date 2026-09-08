@@ -6,10 +6,11 @@ Bypasses the whisper-local GUI wrapper (which swallows a cuBLAS RuntimeError and
 hangs on "transcribing"). Must run in the SAME Python where the direct GPU test
 passed (whisper-local bundled interpreter), so cuBLAS DLLs sit next to ctranslate2.
 
-Flow:
+Flow (single-key toggle, default):
   Ctrl+Space  -> start microphone recording (sounddevice, 16 kHz mono)
-  F8          -> stop -> transcribe (faster-whisper) -> paste at cursor
+  Ctrl+Space  -> stop -> transcribe (faster-whisper) -> paste at cursor
 Paste is clipboard-based (pyperclip + emulated Ctrl+V) -- robust for Cyrillic.
+Two-key mode is available via --stop-key (e.g. --stop-key f8).
 
 Design rules (AGENTS.md):
   - Model is loaded and called in ONE dedicated worker thread via a queue,
@@ -81,7 +82,14 @@ class Recorder:
             self._stream = None
             return
         self.recording = True
-        log("REC start (Ctrl+Space) -- speak, then press F8 to stop")
+        log("REC start -- speak, then press the hotkey again to stop")
+
+    def toggle(self):
+        """Single-key toggle: start if idle, else stop -> transcribe."""
+        if self.recording:
+            self.stop()
+        else:
+            self.start()
 
     def stop(self):
         if not self.recording:
@@ -185,8 +193,10 @@ def build_argparser():
     p.add_argument("--language", default="ru", help="language code (default: ru)")
     p.add_argument("--beam-size", type=int, default=5, help="beam size (default: 5)")
     p.add_argument("--samplerate", type=int, default=16000, help="capture Hz (default: 16000)")
-    p.add_argument("--start-key", default="ctrl+space", help="start hotkey (default: ctrl+space)")
-    p.add_argument("--stop-key", default="f8", help="stop hotkey (default: f8)")
+    p.add_argument("--start-key", default="ctrl+space",
+                   help="start/toggle hotkey (default: ctrl+space)")
+    p.add_argument("--stop-key", default="",
+                   help="separate stop hotkey; empty = single-key toggle mode (default: toggle)")
     p.add_argument("--quit-key", default="ctrl+shift+q", help="quit hotkey (default: ctrl+shift+q)")
     p.add_argument("--model-dir", default=None,
                    help="model cache dir (default: HF cache). External path is a CLI arg.")
@@ -220,12 +230,18 @@ def main(argv=None):
         log("QUIT requested")
         stop_event.set()
 
-    keyboard.add_hotkey(args.start_key, rec.start)
-    keyboard.add_hotkey(args.stop_key, rec.stop)
     keyboard.add_hotkey(args.quit_key, on_quit)
-
-    log("READY. %s = start rec | %s = stop+transcribe+paste | %s = quit"
-        % (args.start_key, args.stop_key, args.quit_key))
+    if args.stop_key:
+        # Two-key mode: explicit start + stop.
+        keyboard.add_hotkey(args.start_key, rec.start)
+        keyboard.add_hotkey(args.stop_key, rec.stop)
+        log("READY. %s = start | %s = stop+transcribe+paste | %s = quit"
+            % (args.start_key, args.stop_key, args.quit_key))
+    else:
+        # Single-key toggle mode (default): press to start, press again to stop.
+        keyboard.add_hotkey(args.start_key, rec.toggle)
+        log("READY. %s = toggle rec (press to start, press again to stop+paste) | %s = quit"
+            % (args.start_key, args.quit_key))
     log("Focus the target window (e.g. Notepad) before pasting.")
 
     try:
