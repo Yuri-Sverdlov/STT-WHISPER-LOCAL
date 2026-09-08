@@ -57,6 +57,7 @@ class Recorder:
         self._frames = []
         self._lock = threading.Lock()
         self.recording = False
+        self._last_toggle = 0.0  # debounce against key auto-repeat
 
     def _callback(self, indata, frames, time_info, status):
         if status:
@@ -91,7 +92,15 @@ class Recorder:
         log("REC start on [%s] -- speak, then press the hotkey again to stop" % name)
 
     def toggle(self):
-        """Single-key toggle: start if idle, else stop -> transcribe."""
+        """Single-key toggle: start if idle, else stop -> transcribe.
+
+        Debounced: a second trigger within 0.3s (key auto-repeat) is ignored,
+        so holding the hotkey does not immediately start-then-stop.
+        """
+        now = time.time()
+        if now - self._last_toggle < 0.3:
+            return
+        self._last_toggle = now
         if self.recording:
             self.stop()
         else:
