@@ -60,3 +60,21 @@ Append-only журнал сессий. Новые записи — снизу.
 
 Проверка: прямой прогон faster_whisper на GPU — model load 3.3s, transcribe 0.7s (float16).
 Юрий подтвердил вживую: Ctrl+Space -> русский текст вставляется в Блокнот. Трек A на GPU ЗАКРЫТ.
+
+## 2026-09-08 — Две равноправные машины; задание для ПК1
+- Уточнение от Юрия: нет «целевой» машины; проект на двух ПК (3050/16 ГБ и 4060/32 ГБ),
+  оба должны работать стабильно.
+- ПК1 (RTX 3050): `git pull` с GitHub (канон с ПК2 уже в origin/main).
+- Архитектор обновил CONTEXT.md, TASK.md (развёртывание трек A на ПК1 + git push),
+  сбросил REPORT.md. Push — задача кодера на ПК1.
+
+## 2026-09-08 — Трек A на ПК1 (RTX 3050): GPU включён, large-v3 на CUDA
+- Sync: HEAD == origin/main == 05f1dfe; рабочие правки канона (архитектор) — в коммит шага 6.
+- Диагностика CUDA: найден виновник mismatch — PhysX\Common\cudart64_65.dll (CUDA 6.5) в PATH.
+  User-PATH очищен (запись удалена); Machine-PATH — нет прав без UAC, НЕ тронут (не помешал).
+- cuBLAS установлен в pythoncore-3.14-64: nvidia-cublas-cu12 + nvidia-cuda-runtime-cu12;
+  cublas64_12.dll/cublasLt64_12.dll/cudart64_12.dll скопированы в ctranslate2\ (рядом с cudnn64_9).
+- Конфиг (пер-машинный): профиль dictation -> large-v3/cuda/float16/ru, ctrl+space/f8; бэкапы *.bak-20260908.
+- Проверка запуском (§16): faster_whisper large-v3 cuda float16 — init 7.87c, transcribe 1.09c, lang=ru.
+  GUI smoke-тест: старт чистый, без CUDA-ошибок, хоткеи 9, large-v3 с HF, приложение живо в трее.
+- Репо не пушился в этой записи — ждёт шага 6 (git-задание) в этом же сеансе.
