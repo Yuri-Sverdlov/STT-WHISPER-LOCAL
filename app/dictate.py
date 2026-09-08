@@ -49,9 +49,10 @@ class Recorder:
     never touches this class -- stop() only hands raw audio to the job queue.
     """
 
-    def __init__(self, samplerate, jobs):
+    def __init__(self, samplerate, jobs, device=None):
         self.samplerate = samplerate
         self.jobs = jobs
+        self.device = device  # input device index or None (system default)
         self._stream = None
         self._frames = []
         self._lock = threading.Lock()
@@ -74,6 +75,7 @@ class Recorder:
                 samplerate=self.samplerate,
                 channels=1,
                 dtype="float32",
+                device=self.device,
                 callback=self._callback,
             )
             self._stream.start()
@@ -82,7 +84,11 @@ class Recorder:
             self._stream = None
             return
         self.recording = True
-        log("REC start -- speak, then press the hotkey again to stop")
+        try:
+            name = sd.query_devices(self._stream.device, "input")["name"]
+        except Exception:  # noqa: BLE001
+            name = str(self.device)
+        log("REC start on [%s] -- speak, then press the hotkey again to stop" % name)
 
     def toggle(self):
         """Single-key toggle: start if idle, else stop -> transcribe."""
@@ -105,10 +111,17 @@ class Recorder:
             self._frames = []
         if not frames:
             log("REC stop -> no audio captured, skipped")
+            log("HINT mic delivered 0 frames. Another app may hold the microphone "
+                "(e.g. Wispr Flow in the tray) -- close it. Or pick a device: "
+                "--list-devices then --device-index N")
             return
         audio = np.concatenate(frames, axis=0).reshape(-1).astype("float32")
         secs = len(audio) / float(self.samplerate)
-        log("REC stop -> queued %.2fs of audio" % secs)
+        peak = float(np.max(np.abs(audio))) if audio.size else 0.0
+        log("REC stop -> queued %.2fs of audio (peak=%.3f)" % (secs, peak))
+        if peak < 0.01:
+            log("WARN signal is near-silent (peak=%.3f) -- mic may be muted or held "
+                "by another app; Whisper will hallucinate on silence" % peak)
         if secs < 0.3:
             log("SKIP clip shorter than 0.3s")
             return
@@ -193,6 +206,10 @@ def build_argparser():
     p.add_argument("--language", default="ru", help="language code (default: ru)")
     p.add_argument("--beam-size", type=int, default=5, help="beam size (default: 5)")
     p.add_argument("--samplerate", type=int, default=16000, help="capture Hz (default: 16000)")
+    p.add_argument("--device-index", type=int, default=None,
+                   help="input device index (default: system default). See --list-devices.")
+    p.add_argument("--list-devices", action="store_true",
+                   help="print available audio devices and exit")
     p.add_argument("--start-key", default="ctrl+space",
                    help="start/toggle hotkey (default: ctrl+space)")
     p.add_argument("--stop-key", default="",
@@ -211,6 +228,14 @@ def build_argparser():
 def main(argv=None):
     args = build_argparser().parse_args(argv)
 
+    if args.list_devices:
+        log("Audio devices (index: name  [in/out channels]):")
+        for i, d in enumerate(sd.query_devices()):
+            mark = " <- default in" if i == sd.default.device[0] else ""
+            log("  %2d: %s  [in=%d out=%d]%s"
+                % (i, d["name"], d["max_input_channels"], d["max_output_channels"], mark))
+        return 0
+
     jobs = queue.Queue()
     ready = threading.Event()
     worker = threading.Thread(target=transcribe_worker, args=(jobs, ready, args), daemon=True)
@@ -222,7 +247,7 @@ def main(argv=None):
         log("FATAL worker thread exited before ready -- see error above")
         return 1
 
-    rec = Recorder(args.samplerate, jobs)
+    rec = Recorder(args.samplerate, jobs, device=args.device_index)
 
     stop_event = threading.Event()
 
