@@ -6,11 +6,12 @@ Bypasses the whisper-local GUI wrapper (which swallows a cuBLAS RuntimeError and
 hangs on "transcribing"). Must run in the SAME Python where the direct GPU test
 passed (whisper-local bundled interpreter), so cuBLAS DLLs sit next to ctranslate2.
 
-Flow (single-key toggle, default):
-  Ctrl+Space  -> start microphone recording (sounddevice, 16 kHz mono)
-  Ctrl+Space  -> stop -> transcribe (faster-whisper) -> paste at cursor
+Flow (hold-to-record, default -- matches PC2's proven UX):
+  hold Ctrl+Space  -> record microphone (sounddevice, 16 kHz mono)
+  release          -> transcribe (faster-whisper) -> paste at cursor
 Paste is clipboard-based (pyperclip + emulated Ctrl+V) -- robust for Cyrillic.
-Two-key mode is available via --stop-key (e.g. --stop-key f8).
+Alt modes: --toggle (tap/tap, best with a single key like f9),
+or --stop-key f8 (two-key start/stop).
 
 Design rules (AGENTS.md):
   - Model is loaded and called in ONE dedicated worker thread via a queue,
@@ -89,7 +90,7 @@ class Recorder:
             name = sd.query_devices(self._stream.device, "input")["name"]
         except Exception:  # noqa: BLE001
             name = str(self.device)
-        log("REC start on [%s] -- speak, then press the hotkey again to stop" % name)
+        log("REC start on [%s] -- recording..." % name)
 
     def toggle(self):
         """Single-key toggle: start if idle, else stop -> transcribe.
@@ -220,9 +221,12 @@ def build_argparser():
     p.add_argument("--list-devices", action="store_true",
                    help="print available audio devices and exit")
     p.add_argument("--start-key", default="ctrl+space",
-                   help="start/toggle hotkey (default: ctrl+space)")
+                   help="record hotkey (default: ctrl+space)")
     p.add_argument("--stop-key", default="",
-                   help="separate stop hotkey; empty = single-key toggle mode (default: toggle)")
+                   help="separate stop hotkey -> enables two-key mode (start / stop)")
+    p.add_argument("--toggle", action="store_true",
+                   help="toggle mode: tap start-key to start, tap again to stop "
+                        "(default is hold-to-record). Best with a non-repeating key like f9.")
     p.add_argument("--quit-key", default="ctrl+shift+q", help="quit hotkey (default: ctrl+shift+q)")
     p.add_argument("--model-dir", default=None,
                    help="model cache dir (default: HF cache). External path is a CLI arg.")
@@ -266,15 +270,38 @@ def main(argv=None):
 
     keyboard.add_hotkey(args.quit_key, on_quit)
     if args.stop_key:
-        # Two-key mode: explicit start + stop.
+        # Two-key mode: explicit start + stop (start is idempotent, so key
+        # auto-repeat while held is harmless).
         keyboard.add_hotkey(args.start_key, rec.start)
         keyboard.add_hotkey(args.stop_key, rec.stop)
         log("READY. %s = start | %s = stop+transcribe+paste | %s = quit"
             % (args.start_key, args.stop_key, args.quit_key))
-    else:
-        # Single-key toggle mode (default): press to start, press again to stop.
+    elif args.toggle:
+        # Toggle mode: tap to start, tap again to stop. Debounced; fragile on a
+        # held modifier combo (auto-repeat) -- prefer a single key like f9.
         keyboard.add_hotkey(args.start_key, rec.toggle)
-        log("READY. %s = toggle rec (press to start, press again to stop+paste) | %s = quit"
+        log("READY. %s = toggle (tap to start, tap again to stop+paste) | %s = quit"
+            % (args.start_key, args.quit_key))
+    else:
+        # Hold-to-record (default): hold the key to record, release to
+        # transcribe+paste. Immune to key auto-repeat (start is idempotent;
+        # a watcher thread stops on release). Matches PC2's proven UX.
+        main_key = args.start_key.split("+")[-1]
+
+        def on_hold_press():
+            if rec.recording:
+                return
+            rec.start()
+
+            def watch_release():
+                while keyboard.is_pressed(main_key):
+                    time.sleep(0.02)
+                rec.stop()
+
+            threading.Thread(target=watch_release, daemon=True).start()
+
+        keyboard.add_hotkey(args.start_key, on_hold_press)
+        log("READY. hold %s to record, release to transcribe+paste | %s = quit"
             % (args.start_key, args.quit_key))
     log("Focus the target window (e.g. Notepad) before pasting.")
 
